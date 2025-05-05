@@ -1,0 +1,82 @@
+USE [SGEAS_DIFF]
+GO
+
+/****** Object:  StoredProcedure [dbo].[Dyn_DataLoad_Testing]    Script Date: 4/28/2025 9:33:49 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+CREATE OR ALTER       PROCEDURE [dbo].[Dyn_DataLoad_Testing]
+    @EnvName NVARCHAR(30),
+    @Project_code NVARCHAR(30),
+    @Template_Downloaded_Path_To NVARCHAR(500),
+    @FROM_S3_Path NVARCHAR(500),
+    @Batch_Code NVARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @execution_id INT;
+    DECLARE @Error_Message_Details NVARCHAR(500);
+    DECLARE @Maxprocessid INT;
+
+    PRINT 'Calling SSIS package procedure in SSISDB...';
+
+    -- Call new procedure in SSISDB
+    EXEC [SSISDB].[catalog].[Execute_AI_DataLoad_Package]
+        @EnvName = @EnvName,
+        @Project_code = @Project_code,
+        @Template_Downloaded_Path_To = @Template_Downloaded_Path_To,
+        @From_S3_Path = @FROM_S3_Path,
+        @execution_id = @execution_id OUTPUT;
+
+    PRINT 'SSIS Package execution complete with ID: ' + CAST(@execution_id AS NVARCHAR);
+
+    -- Get error message details
+    SELECT @Error_Message_Details = STRING_AGG(message, ',')
+    FROM SSISDB.catalog.event_messages
+    WHERE operation_id = @execution_id AND event_name = 'OnERROR';
+
+	PRINT 'Error details';
+
+    PRINT 'Error details retrieved';
+
+    -- Insert into process_data_logs
+    SELECT @Maxprocessid = MAX(processlogsid) + 1 FROM dbo.Process_data_logs;
+
+    INSERT INTO dbo.Process_data_logs (
+        Execution_id, Batch_Code, project_code, Process_Step, process_description,
+        Start_Time, End_Time, Duration_MM_SS
+    )
+    SELECT
+        @execution_id,
+        @Batch_Code,
+        @Project_code,
+        REPLACE(package_name, '.dtsx', ''),
+        CAST(
+            CASE 
+                WHEN @Error_Message_Details is null THEN 'Completed'
+                WHEN @Error_Message_Details IS NOT NULL THEN 'Completed With Some Templates Failure. Please check Logs: ' + @Error_Message_Details
+                ELSE 'Failed: ' + ISNULL(@Error_Message_Details, 'Unknown Error')
+            END AS NVARCHAR(500)
+        ),
+        start_time,
+        end_time,
+        FORMAT(DATEDIFF(SECOND, start_time, end_time) / 60, '00') + ':' +
+        FORMAT(DATEDIFF(SECOND, start_time, end_time) % 60, '00')
+    FROM SSISDB.catalog.executions
+    WHERE execution_id = @execution_id;
+
+    PRINT 'Process log inserted';
+
+    SELECT @Batch_Code;
+END;
+GO
+
+
