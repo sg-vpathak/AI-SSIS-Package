@@ -1,0 +1,86 @@
+USE [SSISDB]
+GO
+
+/****** Object:  StoredProcedure [catalog].[Execute_AI_DataLoad_Package]    Script Date: 4/28/2025 9:37:24 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE OR ALTER     PROCEDURE [catalog].[Execute_AI_DataLoad_Package]
+    @EnvName NVARCHAR(30),
+    @Project_code NVARCHAR(30),
+    @Template_Downloaded_Path_To NVARCHAR(500),
+    @From_S3_Path NVARCHAR(500),
+    @execution_id INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+	print'SUserNAme'+Suser_name();
+	EXECUTE AS LOGIN = 'etch\uatsqlservices';
+	print'SUserNAme before'+Suser_name();
+    -- Create execution
+    EXEC [catalog].[create_execution]
+        @folder_name = N'AI_Data_Intregation',
+        @project_name = N'AI_Data_Intregation',
+        @package_name = N'Dyn_AIDataLoad.dtsx',
+        @execution_id = @execution_id OUTPUT;
+
+		
+
+    -- Set parameters
+    EXEC [catalog].[set_execution_parameter_value]
+        @execution_id = @execution_id,
+        @object_type = 20,
+        @parameter_name = N'pp_Env',
+        @parameter_value = @EnvName;
+
+		print'Env name :'+@EnvName;
+
+    EXEC [catalog].[set_execution_parameter_value]
+        @execution_id = @execution_id,
+        @object_type = 20,
+        @parameter_name = N'pp_Template_Downloaded_To',
+        @parameter_value = @Template_Downloaded_Path_To;
+
+		print'Template_Downloaded_Path_To name :'+@Template_Downloaded_Path_To;
+
+    EXEC [catalog].[set_execution_parameter_value]
+        @execution_id = @execution_id,
+        @object_type = 20,
+        @parameter_name = N'pp_Template_Downloaded_From',
+        @parameter_value = @From_S3_Path;
+
+		print'From_S3_Path :'+@From_S3_Path;
+
+    EXEC [catalog].[set_execution_parameter_value]
+        @execution_id = @execution_id,
+        @object_type = 20,
+        @parameter_name = N'pp_project_code',
+        @parameter_value = @Project_code;
+
+		print'Project_code :'+@Project_code;
+
+    EXEC [catalog].[set_execution_parameter_value] 
+        @execution_id,
+        @object_type = 50,
+        @parameter_name = N'SYNCHRONIZED',
+        @parameter_value = 0;
+
+    -- Start execution
+	print'Start Execution :';
+
+    EXEC [catalog].[start_execution] @execution_id;
+
+	
+
+	print'End execution :';
+	
+	REVERT;
+END;
+GO
+
+
